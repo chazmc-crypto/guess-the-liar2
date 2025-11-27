@@ -258,7 +258,3 @@ return (
         )}
       </ul>
       {creator === name && <button onClick={nextRound}>Next Round</button>}
-    </div>
-  )}
-</div>
-```

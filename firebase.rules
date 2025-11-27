@@ -1,12 +1,38 @@
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // Rooms collection - only authenticated users may read/write.
-    // IMPORTANT: These are starter rules. For stricter privacy you should
-    // require that the requesting user is part of the room's players array
-    // before allowing reads/writes. This example allows any authenticated user.
-    match /rooms/{roomId} {
-      allow read, write: if request.auth != null;
+{
+  "rules": {
+    "rooms": {
+      "$roomCode": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        
+        "players": {
+          "$playerName": {
+            // Only a player can write their own data (vote, question)
+            ".read": "auth != null",
+            ".write": "auth != null && $playerName === auth.token.name"
+          }
+        },
+        
+        // Only the creator can start the game (update phase)
+        "phase": {
+          ".read": "auth != null",
+          ".write": "auth != null && newData.val() !== data.val() && data.child('creator').val() === auth.token.name"
+        },
+
+        // The rest of the room data (impostors, timerEnd) can only be updated by the creator
+        "impostors": {
+          ".read": "auth != null",
+          ".write": "auth != null && root.child('rooms/' + $roomCode + '/creator').val() === auth.token.name"
+        },
+        "timerEnd": {
+          ".read": "auth != null",
+          ".write": "auth != null && root.child('rooms/' + $roomCode + '/creator').val() === auth.token.name"
+        },
+        "creator": {
+          ".read": "auth != null",
+          ".write": "false"
+        }
+      }
     }
   }
 }

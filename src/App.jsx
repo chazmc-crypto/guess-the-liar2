@@ -136,7 +136,6 @@ await startRound();
 
 // ---------------- UI HELPERS ----------------
 const initials = n => n ? n.split(" ").map(s => s[0].toUpperCase()).slice(0,2).join("") : "?";
-const playerVoted = p => !!players[p]?.vote;
 
 // ---------------- RENDER ----------------
 return (

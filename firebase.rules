@@ -1,0 +1,12 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Rooms collection - only authenticated users may read/write.
+    // IMPORTANT: These are starter rules. For stricter privacy you should
+    // require that the requesting user is part of the room's players array
+    // before allowing reads/writes. This example allows any authenticated user.
+    match /rooms/{roomId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

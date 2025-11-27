@@ -93,14 +93,15 @@ const createRoom = async () => {
 if (!name) { alert("Enter your name"); return; }
 const code = Math.floor(Math.random() * 9000 + 1000).toString();
 setRoomCode(code);
+const sanitizedName = sanitize(name);
 const playerObj = {};
-playerObj[name] = { answer: "", vote: [] };
+playerObj[sanitizedName] = { answer: "", vote: [] };
 await set(ref(database, `rooms/${sanitize(code)}`), {
 players: playerObj,
 impostors: [],
 phase: "lobby",
 timerEnd: null,
-creator: name,
+creator: sanitizedName,
 realQuestion: "",
 round: 1
 });
@@ -129,16 +130,17 @@ const category = promptCategories[Math.floor(Math.random() * promptCategories.le
 const canonicalReal = category.real;
 const updatedPlayers = {};
 playerNames.forEach(p => {
+const sanitized = sanitize(p);
 if (selectedImpostors.includes(p)) {
 const variant = category.impostors[Math.floor(Math.random() * category.impostors.length)];
-updatedPlayers[p] = { answer: "", variant, vote: [] };
+updatedPlayers[sanitized] = { answer: "", variant, vote: [] };
 } else {
-updatedPlayers[p] = { answer: "", variant: canonicalReal, vote: [] };
+updatedPlayers[sanitized] = { answer: "", variant: canonicalReal, vote: [] };
 }
 });
 await update(roomRef, {
 players: updatedPlayers,
-impostors: selectedImpostors,
+impostors: selectedImpostors.map(sanitize),
 realQuestion: canonicalReal,
 phase: "answer",
 timerEnd: Date.now() + 60 * 1000,
@@ -216,10 +218,10 @@ return (
   {phase === "answer" && (
     <div>
       <h2>Round {round} - Answer Phase</h2>
-      <div>Your question: {String(players[name]?.variant)}</div>
+      <div>Your question: {String(players[sanitize(name)]?.variant)}</div>
       <input
         type="text"
-        value={String(players[name]?.answer || "")}
+        value={String(players[sanitize(name)]?.answer || "")}
         placeholder="Type your answer"
         onChange={e => {
           const ans = e.target.value;

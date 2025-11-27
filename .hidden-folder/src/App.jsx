@@ -6,7 +6,7 @@ import { getDatabase, ref, set, onValue, update, get } from "firebase/database";
 const firebaseConfig = {
 apiKey: "AIzaSyBfHKSTDRQVsoFXSbospWZHJRlRSijgiW0",
 authDomain: "guesstheliar-ca0b6.firebaseapp.com",
-databaseURL: "[https://guesstheliar-ca0b6-default-rtdb.firebaseio.com](https://guesstheliar-ca0b6-default-rtdb.firebaseio.com)",
+databaseURL: "https://guesstheliar-ca0b6-default-rtdb.firebaseio.com",
 projectId: "guesstheliar-ca0b6",
 storageBucket: "guesstheliar-ca0b6.firebasestorage.app",
 messagingSenderId: "300436562056",
@@ -16,7 +16,7 @@ appId: "1:300436562056:web:8e5368b914a5cbfded7f3d"
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
 
-const sanitize = str => str.replace(/[.#$[]\s()]/g, "_").trim();
+const sanitize = str => str.replace(/[.#$\[\]\s()]/g, "_").trim();
 const isValidPath = str => /^[^.#$[]\s]+$/.test(str) && str.trim() !== "";
 
 const promptCategories = Array.from({ length: 200 }).map((_, i) => ({
@@ -56,6 +56,10 @@ import("canvas-confetti").then(mod => setConfetti(() => mod.default));
 useEffect(() => {
 if (!roomCode) return;
 const roomRef = ref(database, `rooms/${sanitize(roomCode)}`);
+await get(roomRef).then(snap => {
+  const currentRound = snap.val()?.round || 1;
+  update(roomRef, { round: currentRound + 1 });
+});
 const unsub = onValue(roomRef, snapshot => {
 const data = snapshot.val();
 if (!data) return;

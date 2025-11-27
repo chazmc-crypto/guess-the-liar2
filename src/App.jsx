@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { database } from "./firebase";
-import { ref, set, get, onValue, update } from "firebase/database";
+import { ref, set, get, update, onValue } from "firebase/database";
 
-// Example prompts
 const prompts = [
   "What is the correct amount of money to spend on a first date?",
   "Pick a dollar range between $20-500",
@@ -13,36 +12,33 @@ const prompts = [
 function App() {
   const [name, setName] = useState("");
   const [roomCode, setRoomCode] = useState("");
-  const [currentRoom, setCurrentRoom] = useState({});
-  const [phase, setPhase] = useState("");
-  const [timer, setTimer] = useState(0);
+  const [players, setPlayers] = useState({});
+  const [phase, setPhase] = useState("waiting");
+  const [timeLeft, setTimeLeft] = useState(0);
   const [voteTarget, setVoteTarget] = useState("");
   const [impostors, setImpostors] = useState([]);
   const [error, setError] = useState("");
 
+  // --- Generate Room Code ---
   const generateRoomCode = () => Math.floor(100000 + Math.random() * 900000).toString();
 
-  // --- Room Creation ---
+  // --- Create Room ---
   const createRoom = async () => {
     if (!name) {
-      setError("Please enter your name");
+      setError("Enter your name");
       return;
     }
     const code = generateRoomCode();
     const roomRef = ref(database, `rooms/${code}`);
 
-    const players = {
-      [name]: { question: "", vote: "" }
-    };
-
     await set(roomRef, {
-      players,
-      impostors: [],
-      timerPhase: "waiting"
+      players: { [name]: { question: "", vote: "" } },
+      phase: "waiting",
+      timerEnd: 0,
+      impostors: []
     });
 
     setRoomCode(code);
-    setCurrentRoom(players);
     setPhase("waiting");
     setError("");
   };
@@ -50,24 +46,20 @@ function App() {
   // --- Join Room ---
   const joinRoom = async () => {
     if (!name || !roomCode) {
-      setError("Please enter your name and room code");
+      setError("Enter your name and room code");
       return;
     }
+
     const roomRef = ref(database, `rooms/${roomCode}`);
     const snapshot = await get(roomRef);
-
     if (!snapshot.exists()) {
       setError("Room not found");
       return;
     }
 
     const roomData = snapshot.val();
-    const players = roomData.players || {};
-    players[name] = { question: "", vote: "" };
-
-    await set(roomRef, { ...roomData, players });
-    setCurrentRoom(players);
-    setPhase(roomData.timerPhase);
+    const updatedPlayers = { ...roomData.players, [name]: { question: "", vote: "" } };
+    await update(roomRef, { players: updatedPlayers });
     setError("");
   };
 
@@ -76,6 +68,7 @@ function App() {
     const roomRef = ref(database, `rooms/${roomCode}`);
     const snapshot = await get(roomRef);
     if (!snapshot.exists()) return;
+
     const roomData = snapshot.val();
     const playerNames = Object.keys(roomData.players);
 
@@ -84,43 +77,85 @@ function App() {
     const shuffled = [...playerNames].sort(() => 0.5 - Math.random());
     const selectedImpostors = shuffled.slice(0, numImpostors);
 
-    // Assign questions
+    // Assign questions per player
     const updatedPlayers = {};
     playerNames.forEach((p) => {
       const isImpostor = selectedImpostors.includes(p);
-      const question = isImpostor
-        ? prompts[Math.floor(Math.random() * prompts.length)]
-        : prompts[Math.floor(Math.random() * prompts.length)];
+      const question = prompts[Math.floor(Math.random() * prompts.length)];
       updatedPlayers[p] = { question, vote: "" };
     });
+
+    const timerEnd = Date.now() + 60 * 1000; // 1 min answer phase
 
     await update(roomRef, {
       players: updatedPlayers,
       impostors: selectedImpostors,
-      timerPhase: "answer"
+      phase: "answer",
+      timerEnd
+    });
+  };
+
+  // --- Handle Timer Sync ---
+  useEffect(() => {
+    if (!roomCode) return;
+    const roomRef = ref(database, `rooms/${roomCode}`);
+    const unsubscribe = onValue(roomRef, (snapshot) => {
+      if (!snapshot.exists()) return;
+      const data = snapshot.val();
+      setPlayers(data.players || {});
+      setPhase(data.phase || "waiting");
+
+      // Calculate time left
+      if (data.timerEnd) {
+        setTimeLeft(Math.max(Math.floor((data.timerEnd - Date.now()) / 1000), 0));
+      }
+
+      setImpostors(data.phase === "reveal" ? data.impostors || [] : []);
     });
 
-    setPhase("answer");
-    startTimer(60, "debate"); // 1-minute answer time
-  };
+    return () => unsubscribe();
+  }, [roomCode]);
 
-  // --- Timer Function ---
-  const startTimer = (seconds, nextPhase) => {
-    setTimer(seconds);
-    const interval = setInterval(() => {
-      setTimer(prev => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          setPhase(nextPhase);
-          if (nextPhase === "debate") startTimer(180, "voting"); // 3-minute debate
-          if (nextPhase === "voting") setTimer(0); // stop timer
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  };
+  // --- Start Next Phase (answer -> debate -> voting -> reveal) ---
+  useEffect(() => {
+    if (!roomCode || !phase) return;
 
-  // --- Vote ---
+    const roomRef = ref(database, `rooms/${roomCode}`);
+
+    let timerInterval;
+    if (phase === "answer") {
+      timerInterval = setInterval(() => {
+        const snapshot = get(roomRef).then(snap => {
+          if (!snap.exists()) return;
+          const end = snap.val().timerEnd;
+          const remaining = Math.max(Math.floor((end - Date.now()) / 1000), 0);
+          setTimeLeft(remaining);
+          if (remaining <= 0) {
+            clearInterval(timerInterval);
+            const newEnd = Date.now() + 3 * 60 * 1000; // 3 min debate
+            update(roomRef, { phase: "debate", timerEnd: newEnd });
+          }
+        });
+      }, 500);
+    } else if (phase === "debate") {
+      timerInterval = setInterval(() => {
+        const snapshot = get(roomRef).then(snap => {
+          if (!snap.exists()) return;
+          const end = snap.val().timerEnd;
+          const remaining = Math.max(Math.floor((end - Date.now()) / 1000), 0);
+          setTimeLeft(remaining);
+          if (remaining <= 0) {
+            clearInterval(timerInterval);
+            update(roomRef, { phase: "voting", timerEnd: 0 });
+          }
+        });
+      }, 500);
+    }
+
+    return () => clearInterval(timerInterval);
+  }, [phase, roomCode]);
+
+  // --- Cast Vote ---
   const castVote = async () => {
     if (!voteTarget) return;
     const roomRef = ref(database, `rooms/${roomCode}/players/${name}`);
@@ -128,35 +163,12 @@ function App() {
 
     // Check if everyone voted
     const roomSnap = await get(ref(database, `rooms/${roomCode}/players`));
-    const players = roomSnap.val();
-    const allVoted = Object.values(players).every(p => p.vote);
+    const allVoted = Object.values(roomSnap.val()).every(p => p.vote);
     if (allVoted) {
-      setPhase("reveal");
+      await update(ref(database, `rooms/${roomCode}`), { phase: "reveal" });
     }
   };
 
-  // --- Listen for room changes ---
-  useEffect(() => {
-    if (!roomCode) return;
-    const roomRef = ref(database, `rooms/${roomCode}`);
-    return onValue(roomRef, snapshot => {
-      if (snapshot.exists()) {
-        setCurrentRoom(snapshot.val().players || {});
-        setPhase(snapshot.val().timerPhase || "");
-      }
-    });
-  }, [roomCode]);
-
-  // --- Fetch impostors only in reveal phase ---
-  useEffect(() => {
-    if (phase !== "reveal" || !roomCode) return;
-    const impostorRef = ref(database, `rooms/${roomCode}/impostors`);
-    return onValue(impostorRef, snapshot => {
-      setImpostors(snapshot.val() || []);
-    });
-  }, [phase, roomCode]);
-
-  // --- Render ---
   return (
     <div style={{ padding: 20 }}>
       <h1>Guess The Liar</h1>
@@ -167,13 +179,13 @@ function App() {
           <input
             placeholder="Enter your name"
             value={name}
-            onChange={e => setName(e.target.value)}
+            onChange={(e) => setName(e.target.value)}
             style={{ marginRight: 10 }}
           />
           <input
             placeholder="Enter room code to join"
             value={roomCode}
-            onChange={e => setRoomCode(e.target.value)}
+            onChange={(e) => setRoomCode(e.target.value)}
             style={{ marginRight: 10 }}
           />
           <div style={{ marginTop: 10 }}>
@@ -188,7 +200,7 @@ function App() {
           <h2>Room Code: {roomCode}</h2>
           <button onClick={startGame}>Start Game</button>
           <ul>
-            {Object.keys(currentRoom).map(p => <li key={p}>{p}</li>)}
+            {Object.keys(players).map((p) => <li key={p}>{p}</li>)}
           </ul>
         </div>
       )}
@@ -196,11 +208,11 @@ function App() {
       {(phase === "answer" || phase === "debate") && (
         <div>
           <h2>Phase: {phase}</h2>
-          <h3>Time left: {timer} seconds</h3>
+          <h3>Time left: {timeLeft} seconds</h3>
           <h4>Your Question:</h4>
-          <p>{currentRoom[name]?.question}</p>
+          <p>{players[name]?.question}</p>
           <ul>
-            {Object.keys(currentRoom).map(p => <li key={p}>{p}</li>)}
+            {Object.keys(players).map((p) => <li key={p}>{p}</li>)}
           </ul>
         </div>
       )}
@@ -209,9 +221,9 @@ function App() {
         <div>
           <h2>Voting Phase</h2>
           <h3>Who is the impostor?</h3>
-          <select value={voteTarget} onChange={e => setVoteTarget(e.target.value)}>
+          <select value={voteTarget} onChange={(e) => setVoteTarget(e.target.value)}>
             <option value="">Select a player</option>
-            {Object.keys(currentRoom).filter(p => p !== name).map(p => (
+            {Object.keys(players).filter(p => p !== name).map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
           </select>
@@ -225,8 +237,8 @@ function App() {
           <h3>Impostor(s): {impostors.join(", ") || "None"}</h3>
           <h4>Votes:</h4>
           <ul>
-            {Object.entries(currentRoom).map(([player, data]) => (
-              <li key={player}>{player} voted for {data.vote || "nobody"}</li>
+            {Object.entries(players).map(([p, data]) => (
+              <li key={p}>{p} voted for {data.vote || "nobody"}</li>
             ))}
           </ul>
         </div>

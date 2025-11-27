@@ -16,19 +16,18 @@ appId: "1:300436562056:web:8e5368b914a5cbfded7f3d"
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
 
-// 200 categories
 const promptCategories = Array.from({ length: 200 }).map((_, i) => ({
-name: `Category ${i + 1}`,
-real: `Real question ${i + 1}?`,
-impostors: [`Impostor A ${i + 1}`, `Impostor B ${i + 1}`, `Impostor C ${i + 1}`]
+name: "Category " + (i + 1),
+real: "Real question " + (i + 1) + "?",
+impostors: ["Impostor A " + (i + 1), "Impostor B " + (i + 1), "Impostor C " + (i + 1)]
 }));
 
 const similarityScore = (a, b) => {
-const setA = new Set(a.toLowerCase().split(/\s+/));
-const setB = new Set(b.toLowerCase().split(/\s+/));
+const setA = new Set((a || "").toLowerCase().split(/\s+/));
+const setB = new Set((b || "").toLowerCase().split(/\s+/));
 const inter = new Set([...setA].filter(x => setB.has(x)));
 const union = new Set([...setA, ...setB]);
-return inter.size / union.size;
+return union.size === 0 ? 0 : inter.size / union.size;
 };
 
 export default function App() {
@@ -47,16 +46,15 @@ const [confetti, setConfetti] = useState(null);
 
 useEffect(() => {
 if (typeof window !== "undefined") {
-import("canvas-confetti").then((mod) => setConfetti(() => mod.default));
+import("canvas-confetti").then(mod => setConfetti(() => mod.default));
 }
 }, []);
 
 useEffect(() => {
 if (!roomCode) return;
-const roomRef = ref(database, `rooms/${roomCode}`);
-const unsub = onValue(roomRef, (snapshot) => {
-const data = snapshot.val();
-if (!data) return;
+const roomRef = ref(database, "rooms/" + roomCode);
+const unsub = onValue(roomRef, snapshot => {
+const data = snapshot.val() || {};
 setPlayers(data.players || {});
 setImpostors(data.impostors || []);
 setPhase(data.phase || "lobby");
@@ -74,7 +72,7 @@ const tick = setInterval(async () => {
 const remain = Math.max(0, Math.ceil((timerEnd - Date.now()) / 1000));
 setTimeLeft(remain);
 if (remain <= 0) {
-const roomRef = ref(database, `rooms/${roomCode}`);
+const roomRef = ref(database, "rooms/" + roomCode);
 const snap = await get(roomRef);
 if (!snap.exists()) return;
 if (phase === "answer") {
@@ -91,8 +89,9 @@ const createRoom = async () => {
 if (!name) { alert("Enter your name"); return; }
 const code = Math.floor(Math.random() * 9000 + 1000).toString();
 setRoomCode(code);
-const playerObj = { [name]: { answer: "", vote: [] } };
-await set(ref(database, `rooms/${code}`), {
+const playerObj = {};
+playerObj[name] = { answer: "", vote: [] };
+await set(ref(database, "rooms/" + code), {
 players: playerObj,
 impostors: [],
 phase: "lobby",
@@ -105,31 +104,28 @@ round: 1
 
 const joinRoom = async () => {
 if (!name || !roomCode) { alert("Enter name and room"); return; }
-const roomRef = ref(database, `rooms/${roomCode}`);
-const snap = await get(roomRef);
-if (!snap.exists()) { alert("Room not found"); return; }
-await set(ref(database, `rooms/${roomCode}/players/${name}`), { answer: "", vote: [] });
+const roomRef = ref(database, "rooms/" + roomCode + "/players/" + name);
+await set(roomRef, { answer: "", vote: [] });
 };
 
 const startRound = async () => {
 if (!roomCode) return;
-const roomRef = ref(database, `rooms/${roomCode}`);
+const roomRef = ref(database, "rooms/" + roomCode);
 const snap = await get(roomRef);
 if (!snap.exists()) return;
-const data = snap.val();
+const data = snap.val() || {};
 const playerNames = Object.keys(data.players || {});
-if (playerNames.length === 0) return;
+if (!playerNames.length) return;
 const numImpostors = Math.floor(Math.random() * Math.max(1, playerNames.length));
 const shuffled = [...playerNames].sort(() => 0.5 - Math.random());
 const selectedImpostors = shuffled.slice(0, numImpostors);
 const category = promptCategories[Math.floor(Math.random() * promptCategories.length)];
 const canonicalReal = category.real;
 const updatedPlayers = {};
-playerNames.forEach((p) => {
-if (selectedImpostors.includes(p)) {
-const variant = category.impostors[Math.floor(Math.random() * category.impostors.length)];
+playerNames.forEach(p => {
+const isImpostor = selectedImpostors.includes(p);
+const variant = isImpostor ? category.impostors[Math.floor(Math.random() * category.impostors.length)] : canonicalReal;
 updatedPlayers[p] = { answer: "", variant, vote: [] };
-} else updatedPlayers[p] = { answer: "", variant: canonicalReal, vote: [] };
 });
 await update(roomRef, {
 players: updatedPlayers,
@@ -142,20 +138,18 @@ round: data.round || 1
 };
 
 const toggleVote = (playerName) => {
-setSelectedVotes(prev =>
-prev.includes(playerName) ? prev.filter(p => p !== playerName) : [...prev, playerName]
-);
+setSelectedVotes(prev => prev.includes(playerName) ? prev.filter(p => p !== playerName) : [...prev, playerName]);
 };
 
 const submitVote = async () => {
 if (!roomCode || !name) return;
-await set(ref(database, `rooms/${roomCode}/players/${name}/vote`), selectedVotes);
+await update(ref(database, "rooms/" + roomCode + "/players/" + name), { vote: selectedVotes });
 };
 
 const nextRound = async () => {
 if (name !== creator) { alert("Only creator can next round"); return; }
 if (round >= 10) { alert("Game over!"); return; }
-await update(ref(database, `rooms/${roomCode}`), { round: round + 1 });
+await update(ref(database, "rooms/" + roomCode), { round: round + 1 });
 setSelectedVotes([]);
 startRound();
 };
@@ -163,7 +157,7 @@ startRound();
 useEffect(() => {
 if (phase === "reveal" && confetti) {
 Object.entries(players).forEach(([p, data]) => {
-if (data.vote.some(v => impostors.includes(v))) {
+if (data && data.vote && data.vote.some(v => impostors.includes(v))) {
 confetti({ particleCount: 50, spread: 70, origin: { y: 0.6 } });
 }
 });
@@ -175,8 +169,8 @@ const names = Object.keys(players);
 const pairs = [];
 for (let i = 0; i < names.length; i++) {
 for (let j = i + 1; j < names.length; j++) {
-const a = players[names[i]]?.answer || "";
-const b = players[names[j]]?.answer || "";
+const a = (players[names[i]] && players[names[i]].answer) || "";
+const b = (players[names[j]] && players[names[j]].answer) || "";
 pairs.push({ pair: [names[i], names[j]], score: similarityScore(a, b) });
 }
 }
@@ -191,8 +185,8 @@ return (
   {phase === "lobby" && (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 20 }}>
       <div>
-        <input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
-        <input placeholder="Room" value={roomCode} onChange={(e) => setRoomCode(e.target.value)} />
+        <input placeholder="Name" value={name} onChange={e => setName(e.target.value)} />
+        <input placeholder="Room" value={roomCode} onChange={e => setRoomCode(e.target.value)} />
         <div>
           <button onClick={createRoom}>Create</button>
           <button onClick={joinRoom}>Join</button>
@@ -201,9 +195,7 @@ return (
       </div>
       <div>
         <h3>Players</h3>
-        {Object.keys(players).map(p => (
-          <div key={p}>{p} {p === creator ? "(host)" : ""}</div>
-        ))}
+        {Object.keys(players).map(p => <div key={p}>{p} {p === creator ? "(host)" : ""}</div>)}
       </div>
     </div>
   )}
@@ -211,14 +203,14 @@ return (
   {phase === "answer" && (
     <div>
       <h2>Round {round} - Answer Phase</h2>
-      <div>Your question: {players[name]?.variant}</div>
+      <div>Your question: {(players[name] && players[name].variant) || ""}</div>
       <input
         type="text"
-        value={players[name]?.answer || ""}
+        value={(players[name] && players[name].answer) || ""}
         placeholder="Type your answer"
-        onChange={(e) => {
+        onChange={e => {
           const ans = e.target.value;
-          update(ref(database, `rooms/${roomCode}/players/${name}`), { answer: ans });
+          update(ref(database, "rooms/" + roomCode + "/players/" + name), { answer: ans });
         }}
       />
       <div>Time left: {timeLeft}s</div>
@@ -254,14 +246,12 @@ return (
       <h3>Votes</h3>
       <ul>
         {Object.entries(players).map(([p, data]) => (
-          <li key={p}>{p} voted for {data.vote.join(", ") || "Nobody"}</li>
+          <li key={p}>{p} voted for {(data && data.vote) ? data.vote.join(", ") : "Nobody"}</li>
         ))}
       </ul>
       <h3>Most similar answers:</h3>
       <ul>
-        {mostSimilarPairs().map((s, i) => (
-          <li key={i}>{s.pair.join(" & ")} — {Math.round(s.score * 100)}%</li>
-        ))}
+        {mostSimilarPairs().map((s, i) => <li key={i}>{s.pair.join(" & ")} — {Math.round(s.score * 100)}%</li>)}
       </ul>
       {creator === name && <button onClick={nextRound}>Next Round</button>}
     </div>

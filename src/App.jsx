@@ -17,6 +17,7 @@ function App() {
   const [phase, setPhase] = useState("");
   const [timer, setTimer] = useState(0);
   const [voteTarget, setVoteTarget] = useState("");
+  const [impostors, setImpostors] = useState([]);
   const [error, setError] = useState("");
 
   const generateRoomCode = () => Math.floor(100000 + Math.random() * 900000).toString();
@@ -81,12 +82,12 @@ function App() {
     // Random number of impostors: 0 to n-1
     const numImpostors = Math.floor(Math.random() * playerNames.length);
     const shuffled = [...playerNames].sort(() => 0.5 - Math.random());
-    const impostors = shuffled.slice(0, numImpostors);
+    const selectedImpostors = shuffled.slice(0, numImpostors);
 
     // Assign questions
     const updatedPlayers = {};
     playerNames.forEach((p) => {
-      const isImpostor = impostors.includes(p);
+      const isImpostor = selectedImpostors.includes(p);
       const question = isImpostor
         ? prompts[Math.floor(Math.random() * prompts.length)]
         : prompts[Math.floor(Math.random() * prompts.length)];
@@ -95,12 +96,12 @@ function App() {
 
     await update(roomRef, {
       players: updatedPlayers,
-      impostors,
+      impostors: selectedImpostors,
       timerPhase: "answer"
     });
 
     setPhase("answer");
-    startTimer(60, "debate"); // 1-minute answer time, then debate
+    startTimer(60, "debate"); // 1-minute answer time
   };
 
   // --- Timer Function ---
@@ -145,6 +146,15 @@ function App() {
       }
     });
   }, [roomCode]);
+
+  // --- Fetch impostors only in reveal phase ---
+  useEffect(() => {
+    if (phase !== "reveal" || !roomCode) return;
+    const impostorRef = ref(database, `rooms/${roomCode}/impostors`);
+    return onValue(impostorRef, snapshot => {
+      setImpostors(snapshot.val() || []);
+    });
+  }, [phase, roomCode]);
 
   // --- Render ---
   return (
@@ -201,7 +211,7 @@ function App() {
       {phase === "reveal" && (
         <div>
           <h2>Reveal Phase</h2>
-          <h3>Impostor(s): {currentRoom.impostors?.join(", ") || "None"}</h3>
+          <h3>Impostor(s): {impostors.join(", ") || "None"}</h3>
           <h4>Votes:</h4>
           <ul>
             {Object.entries(currentRoom).map(([player, data]) => (

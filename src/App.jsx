@@ -1,239 +1,156 @@
 // AppArcadeTheme.jsx
-import React, { useEffect, useState, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { initializeApp } from "firebase/app";
 import {
-getFirestore,
-doc,
-setDoc,
-getDoc,
-onSnapshot,
-updateDoc,
-serverTimestamp,
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  onSnapshot,
 } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Zap, Crown, Download, Upload, ImageIcon, X } from "lucide-react";
 import Confetti from "react-confetti";
+import { X, Upload, Download } from "lucide-react";
 
-/*
-Full arcade-themed app shell with:
-- animations (Framer Motion)
-- DOM confetti only when someone guesses correctly
-- multi-vote (n-1) with Submit button
-- typed answers per round + DB storage
-- 10-round match flow with scoring
-- compatibility scoring at match end
-- avatar editor + micro-bounce + toast
-- import/export JSON & CSV for categories
-- Tailwind classes
-*/
-
-// ------------------------ FIREBASE CONFIG ------------------------
+// ------------------- FIREBASE CONFIG -------------------
 const firebaseConfig = {
-apiKey: "AIzaSyBfHKSTDRQVsoFXSbospWZHJRlRSijgiW0",
-authDomain: "guesstheliar-ca0b6.firebaseapp.com",
-projectId: "guesstheliar-ca0b6",
-storageBucket: "guesstheliar-ca0b6.appspot.com",
-messagingSenderId: "300436562056",
-appId: "1:300436562056:web:8e5368b914a5cbfded7f3d",
+  apiKey: "AIzaSyBfHKSTDRQVsoFXSbospWZHJRlRSijgiW0",
+  authDomain: "guesstheliar-ca0b6.firebaseapp.com",
+  projectId: "guesstheliar-ca0b6",
+  storageBucket: "guesstheliar-ca0b6.appspot.com",
+  messagingSenderId: "300436562056",
+  appId: "1:300436562056:web:8e5368b914a5cbfded7f3d",
 };
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// ------------------------ CATEGORY GENERATOR ------------------------
-const seedCategories = [
-{ name: "Movies", real: "What's your favorite movie?", impostors: ["Name the worst movie ever.", "Pick a movie nobody should watch.", "What's a movie that deserves zero stars?"] },
-{ name: "Food", real: "What's your go-to comfort food?", impostors: ["Pick the grossest food you can imagine.", "Name a food you'd refuse to eat ever.", "Describe the worst tasting dish possible."] },
-{ name: "Music", real: "Which song or artist do you listen to most?", impostors: ["Name the worst song ever made.", "Pick a genre that ruins music for everyone.", "Choose a track that makes people cringe."] },
-{ name: "Travel", real: "What's your dream vacation spot?", impostors: ["Name a terrible vacation location.", "Pick a dangerous place you'd avoid.", "Describe an impossible vacation."] },
-{ name: "Hobbies", real: "What's your favorite hobby?", impostors: ["Name the most boring hobby imaginable.", "Pick a pastime that seems dangerous.", "Describe a hobby nobody would try."] },
-];
-
-function expandTo200(seeds) {
-const categories = [];
-const templates = {
-real: [
-"What's your favorite {topic}?",
-"What's one {topic} you'd recommend?",
-"Describe your ideal {topic} scenario.",
-"What's a {topic} memory you keep?",
-],
-impostor: [
-"Name the worst {topic} you can imagine.",
-"Pick an {topic} that would make everyone cringe.",
-"Describe an impossible {topic} scenario.",
-],
+// ------------------- UTILS -------------------
+const normalize = (str) => str.toLowerCase().replace(/[^a-z0-9 ]/g, "").split(" ").filter(w => !["the","a","an","and","or","of"].includes(w));
+const jaccard = (a,b) => {
+  const setA = new Set(normalize(a));
+  const setB = new Set(normalize(b));
+  const intersection = new Set([...setA].filter(x => setB.has(x)));
+  const union = new Set([...setA,...setB]);
+  return union.size ? intersection.size / union.size : 0;
 };
-while (categories.length < 200) {
-seeds.forEach((seed) => {
-if (categories.length >= 200) return;
-const realQ = templates.real[Math.floor(Math.random() * templates.real.length)].replace("{topic}", seed.name);
-const impostorQs = templates.impostor.map(t => t.replace("{topic}", seed.name));
-categories.push({ name: seed.name, real: realQ, impostors: impostorQs });
-});
-}
-return categories;
-}
-const categories200 = expandTo200(seedCategories);
 
-// ------------------------ MAIN APP ------------------------
+// ------------------- MAIN APP -------------------
 export default function AppArcadeTheme() {
-const [room, setRoom] = useState(null);
-const [playerName, setPlayerName] = useState("");
-const [voteSelection, setVoteSelection] = useState([]);
-const [typedAnswer, setTypedAnswer] = useState("");
-const [showConfetti, setShowConfetti] = useState(false);
-const [avatar, setAvatar] = useState(null);
-const [toast, setToast] = useState("");
+  const [room, setRoom] = useState({});
+  const [round, setRound] = useState(1);
+  const [typedAnswer, setTypedAnswer] = useState("");
+  const [votes, setVotes] = useState([]);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [avatar, setAvatar] = useState("");
+  const [categories, setCategories] = useState([]);
 
-const maxRounds = 10;
+  const roomCode = "TESTROOM"; // placeholder
+  const playerName = "Player1"; // placeholder
 
-// Firestore listeners
-useEffect(() => {
-if (!room) return;
-const unsub = onSnapshot(doc(db, "rooms", room.code), (snap) => {
-setRoom(snap.data());
-});
-return () => unsub();
-}, [room?.code]);
+  // ------------------- FIRESTORE SYNC -------------------
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db,"rooms",roomCode), (snap)=>{
+      if(snap.exists()) setRoom(snap.data());
+    });
+    return ()=> unsub();
+  },[]);
 
-// ------------------------ VOTING ------------------------
-const toggleVote = (name) => {
-if (!room) return;
-const nPlayers = Object.keys(room.players).length;
-const limit = nPlayers - 1; // multi-vote n-1
-setVoteSelection((prev) => {
-if (prev.includes(name)) return prev.filter((x) => x !== name);
-if (prev.length >= limit) return prev; // enforce limit
-return [...prev, name];
-});
-};
+  // ------------------- HANDLE TYPED ANSWER -------------------
+  const submitAnswer = async () => {
+    await updateDoc(doc(db,"rooms",roomCode),{
+      [`answers.${round}.${playerName}`]: typedAnswer
+    });
+  };
 
-const submitVote = async () => {
-if (!room) return;
-await updateDoc(doc(db, "rooms", room.code), {
-[`votes.${room.round}.${playerName}`]: voteSelection,
-});
-setVoteSelection([]);
-};
+  // ------------------- HANDLE VOTES -------------------
+  const maxVotes = room.players ? Object.keys(room.players).length - 1 : 1;
+  const toggleVote = (name)=>{
+    if(votes.includes(name)) setVotes(votes.filter(v=>v!==name));
+    else if(votes.length < maxVotes) setVotes([...votes,name]);
+  };
+  const submitVotes = async () => {
+    await updateDoc(doc(db,"rooms",roomCode),{
+      [`votes.${round}.${playerName}`]: votes
+    });
+    setVotes([]);
+  };
 
-// ------------------------ TYPED ANSWERS ------------------------
-const submitAnswer = async () => {
-if (!room) return;
-await updateDoc(doc(db, "rooms", room.code), {
-[`answers.${room.round}.${playerName}`]: typedAnswer,
-});
-setTypedAnswer("");
-};
+  // ------------------- HANDLE AVATAR -------------------
+  const saveAvatar = async () => {
+    await updateDoc(doc(db,"rooms",roomCode),{
+      [`players.${playerName}.avatar`]: avatar
+    });
+    // micro-bounce animation
+    const el = document.getElementById('avatar-toast');
+    if(el){
+      el.classList.add('scale-110');
+      setTimeout(()=> el.classList.remove('scale-110'),300);
+    }
+  };
 
-// ------------------------ AVATAR SAVE ------------------------
-const saveAvatar = async (newAvatar) => {
-setAvatar(newAvatar);
-setToast("Avatar saved!");
-setTimeout(() => setToast(""), 2000);
-// micro-bounce animation
-const el = document.getElementById("avatar-img");
-if (el) el.animate([{ transform: "scale(1.2)" }, { transform: "scale(1)" }], { duration: 300 });
-await updateDoc(doc(db, "players", playerName), { avatar: newAvatar });
-};
+  // ------------------- CONFETTI -------------------
+  const triggerConfetti = () => {
+    setShowConfetti(true);
+    setTimeout(()=> setShowConfetti(false),1500);
+  };
 
-// ------------------------ CONFETTI ------------------------
-useEffect(() => {
-if (!room) return;
-// trigger confetti if someone correctly guessed an impostor
-const lastRoundVotes = room.votes?.[room.round] || {};
-const impostors = room.impostors || [];
-let correct = false;
-Object.entries(lastRoundVotes).forEach(([voter, votes]) => {
-votes.forEach((v) => { if (impostors.includes(v)) correct = true; });
-});
-if (correct) {
-setShowConfetti(true);
-setTimeout(() => setShowConfetti(false), 3000);
-}
-}, [room?.votes]);
+  // ------------------- IMPORT/EXPORT -------------------
+  const exportJSON = () => {
+    const dataStr = JSON.stringify(categories,null,2);
+    const blob = new Blob([dataStr],{type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download="categories.json"; a.click();
+  };
+  const importJSON = (e) => {
+    const file = e.target.files[0];
+    const reader = new FileReader();
+    reader.onload = (ev)=>{
+      const imported = JSON.parse(ev.target.result);
+      setCategories(imported);
+      setDoc(doc(db,"meta","categories"),{categories:imported});
+    };
+    reader.readAsText(file);
+  };
 
-// ------------------------ COMPATIBILITY ------------------------
-const computeCompatibility = () => {
-if (!room?.answers) return {};
-const scores = {};
-const rounds = Object.keys(room.answers);
-rounds.forEach((r) => {
-const answers = room.answers[r];
-const names = Object.keys(answers);
-names.forEach((a, i) => {
-for (let j = i + 1; j < names.length; j++) {
-const b = names[j];
-const setA = new Set(answers[a].toLowerCase().replace(/[^\w\s]/g, "").split(" "));
-const setB = new Set(answers[b].toLowerCase().replace(/[^\w\s]/g, "").split(" "));
-const inter = new Set([...setA].filter(x => setB.has(x)));
-const union = new Set([...setA, ...setB]);
-const sim = union.size ? inter.size / union.size : 0;
-scores[`${a}-${b}`] = (scores[`${a}-${b}`] || 0) + sim;
-}
-});
-});
-return scores;
-};
+  // ------------------- RENDER -------------------
+  return (
+    <div className="bg-black text-green-400 min-h-screen p-4 font-mono">
+      {showConfetti && <Confetti numberOfPieces={200} recycle={false} />}
 
-// ------------------------ RENDER ------------------------
-return ( <div className="bg-gradient-to-br from-purple-800 to-pink-500 min-h-screen p-4 text-white font-mono"> <AnimatePresence>
-{showConfetti && <Confetti recycle={false} numberOfPieces={150} />} </AnimatePresence>
+      <h1 className="text-3xl mb-4">Arcade Impostor Game</h1>
 
-```
-  <header className="flex items-center justify-between mb-4">
-    <h1 className="text-3xl font-bold">Guess the Liar 🎮</h1>
-    <div>{toast && <div className="bg-yellow-400 text-black px-2 py-1 rounded">{toast}</div>}</div>
-  </header>
-
-  <main className="grid gap-4">
-    <section className="bg-black bg-opacity-50 p-4 rounded">
-      <h2 className="text-xl font-bold">Your Avatar</h2>
-      <motion.img
-        id="avatar-img"
-        src={avatar || "/default-avatar.png"}
-        alt="avatar"
-        className="w-20 h-20 rounded-full mb-2"
-        whileHover={{ scale: 1.1 }}
-      />
-      <div className="flex gap-2">
-        <input type="text" placeholder="Avatar URL" onBlur={(e) => saveAvatar(e.target.value)} className="px-2 rounded text-black" />
+      <div className="mb-4">
+        <label>Typed Answer:</label>
+        <textarea className="w-full bg-gray-900 p-2" value={typedAnswer} onChange={(e)=>setTypedAnswer(e.target.value)} />
+        <button className="bg-green-600 px-4 py-1 mt-2" onClick={submitAnswer}>Submit Answer</button>
       </div>
-    </section>
 
-    <section className="bg-black bg-opacity-50 p-4 rounded">
-      <h2 className="text-xl font-bold">Typed Answer</h2>
-      <textarea
-        value={typedAnswer}
-        onChange={(e) => setTypedAnswer(e.target.value)}
-        placeholder="Type your answer..."
-        className="w-full p-2 rounded text-black"
-      />
-      <button onClick={submitAnswer} className="mt-2 bg-green-500 px-4 py-2 rounded hover:bg-green-600">Submit Answer</button>
-    </section>
-
-    <section className="bg-black bg-opacity-50 p-4 rounded">
-      <h2 className="text-xl font-bold">Vote</h2>
-      <div className="flex flex-wrap gap-2">
-        {room && Object.keys(room.players || {}).map((name) => (
-          <button
-            key={name}
-            onClick={() => toggleVote(name)}
-            className={`px-3 py-1 rounded ${voteSelection.includes(name) ? "bg-blue-500" : "bg-gray-700"}`}
-          >
-            {name}
-          </button>
+      <div className="mb-4">
+        <h2>Vote for Impostors (max {maxVotes})</h2>
+        {room.players && Object.keys(room.players).map((p,i)=>(
+          p !== playerName && <button key={i} className={`m-1 px-2 py-1 ${votes.includes(p)?'bg-green-600':'bg-gray-700'}`} onClick={()=>toggleVote(p)}>{p}</button>
         ))}
+        <button className="bg-green-600 px-4 py-1 mt-2" onClick={submitVotes}>Submit Votes</button>
       </div>
-      <button onClick={submitVote} className="mt-2 bg-purple-500 px-4 py-2 rounded hover:bg-purple-600">Submit Vote</button>
-    </section>
 
-    <section className="bg-black bg-opacity-50 p-4 rounded">
-      <h2 className="text-xl font-bold">Compatibility Scores</h2>
-      <pre className="text-sm">{JSON.stringify(computeCompatibility(), null, 2)}</pre>
-    </section>
-  </main>
-</div>
-```
+      <div className="mb-4">
+        <label>Avatar URL:</label>
+        <input className="bg-gray-900 p-1 w-full" value={avatar} onChange={(e)=>setAvatar(e.target.value)} />
+        <div id="avatar-toast" className="inline-block"><button className="bg-blue-600 px-4 py-1 mt-2" onClick={saveAvatar}>Save Avatar</button></div>
+      </div>
 
-);
+      <div className="mb-4">
+        <label>Import Categories JSON:</label>
+        <input type="file" accept="application/json" onChange={importJSON} />
+        <button className="bg-purple-600 px-4 py-1 mt-2" onClick={exportJSON}>Export Categories JSON</button>
+      </div>
+
+      <div className="mt-6">
+        <h2>Round {round}</h2>
+        {/* Scoring, compatibility, player cards would go here */}
+      </div>
+    </div>
+  );
 }

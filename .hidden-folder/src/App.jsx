@@ -1,4 +1,3 @@
-import React, { useEffect, useState } from "react";
 import { initializeApp } from "firebase/app";
 import { getDatabase, ref, set, onValue, update, get } from "firebase/database";
 
@@ -6,7 +5,7 @@ import { getDatabase, ref, set, onValue, update, get } from "firebase/database";
 const firebaseConfig = {
 apiKey: "AIzaSyBfHKSTDRQVsoFXSbospWZHJRlRSijgiW0",
 authDomain: "guesstheliar-ca0b6.firebaseapp.com",
-databaseURL: "https://guesstheliar-ca0b6-default-rtdb.firebaseio.com",
+databaseURL: "[https://guesstheliar-ca0b6-default-rtdb.firebaseio.com](https://guesstheliar-ca0b6-default-rtdb.firebaseio.com)",
 projectId: "guesstheliar-ca0b6",
 storageBucket: "guesstheliar-ca0b6.firebasestorage.app",
 messagingSenderId: "300436562056",
@@ -21,9 +20,9 @@ const sanitize = str => str.replace(/[.#$[]\s()]/g, "_").trim();
 const isValidPath = str => /^[^.#$[]\s]+$/.test(str) && str.trim() !== "";
 
 const promptCategories = Array.from({ length: 200 }).map((_, i) => ({
-name: Category ${i + 1},
-real: Real question ${i + 1},
-impostors: [Impostor A ${i + 1}, Impostor B ${i + 1}, Impostor C ${i + 1}]
+name: `Category ${i + 1}`,
+real: `Real question ${i + 1}`,
+impostors: [`Impostor A ${i + 1}`, `Impostor B ${i + 1}`, `Impostor C ${i + 1}`]
 }));
 
 const similarityScore = (a, b) => {
@@ -56,7 +55,7 @@ import("canvas-confetti").then(mod => setConfetti(() => mod.default));
 
 useEffect(() => {
 if (!roomCode) return;
-const roomRef = ref(database, rooms/${sanitize(roomCode)});
+const roomRef = ref(database, `rooms/${sanitize(roomCode)}`);
 const unsub = onValue(roomRef, snapshot => {
 const data = snapshot.val();
 if (!data) return;
@@ -77,7 +76,7 @@ const tick = setInterval(async () => {
 const remain = Math.max(0, Math.ceil((timerEnd - Date.now()) / 1000));
 setTimeLeft(remain);
 if (remain <= 0) {
-const roomRef = ref(database, rooms/${sanitize(roomCode)});
+const roomRef = ref(database, `rooms/${sanitize(roomCode)}`);
 const snap = await get(roomRef);
 if (!snap.exists()) return;
 if (phase === "answer") {
@@ -95,10 +94,10 @@ if (!name || !isValidPath(name)) {
 alert("Enter a valid name (no '.', '#', '$', '[', ']', or spaces)");
 return;
 }
-
 const code = Math.floor(Math.random() * 9000 + 1000).toString();
 const sanitizedCode = sanitize(code);
 const sanitizedName = sanitize(name);
+
 
 setRoomCode(sanitizedCode);
 
@@ -115,6 +114,7 @@ await set(ref(database, `rooms/${sanitizedCode}`), {
   round: 1
 });
 
+
 };
 
 const joinRoom = async () => {
@@ -127,6 +127,7 @@ alert("Name or room code contains invalid characters");
 return;
 }
 
+
 const sanitizedName = sanitize(name);
 const sanitizedCode = sanitize(roomCode);
 const roomRef = ref(database, `rooms/${sanitizedCode}`);
@@ -138,15 +139,16 @@ if (!snap.exists()) {
 
 await set(ref(database, `rooms/${sanitizedCode}/players/${sanitizedName}`), { answer: "", vote: [] });
 
+
 };
 
 const startRound = async () => {
 if (!roomCode || !isValidPath(roomCode)) return;
-
 const sanitizedCode = sanitize(roomCode);
 const roomRef = ref(database, `rooms/${sanitizedCode}`);
 const snap = await get(roomRef);
 if (!snap.exists()) return;
+
 
 const data = snap.val();
 const playerNames = Object.keys(data.players || {});
@@ -179,9 +181,10 @@ await update(roomRef, {
   round: data.round || 1
 });
 
+
 };
 
-const toggleVote = (playerName) => {
+const toggleVote = playerName => {
 setSelectedVotes(prev =>
 prev.includes(playerName) ? prev.filter(p => p !== playerName) : [...prev, playerName]
 );
@@ -191,13 +194,19 @@ const submitVote = async () => {
 if (!roomCode || !name) return;
 const sanitizedName = sanitize(name);
 const sanitizedCode = sanitize(roomCode);
-await set(ref(database, rooms/${sanitizedCode}/players/${sanitizedName}/vote), selectedVotes);
+await set(ref(database, `rooms/${sanitizedCode}/players/${sanitizedName}/vote`), selectedVotes);
 };
 
 const nextRound = async () => {
-if (name !== creator) { alert("Only creator can next round"); return; }
-if (round >= 10) { alert("Game over!"); return; }
-await update(ref(database, rooms/${sanitize(roomCode)}), { round: round + 1 });
+if (name !== creator) {
+alert("Only creator can next round");
+return;
+}
+if (round >= 10) {
+alert("Game over!");
+return;
+}
+await update(ref(database, `rooms/${sanitize(roomCode)}`), { round: round + 1 });
 setSelectedVotes([]);
 startRound();
 };
@@ -227,10 +236,7 @@ return pairs.sort((a, b) => b.score - a.score).slice(0, 3);
 
 return (
 <div style={{ fontFamily: "Arial,sans-serif", padding: 20, maxWidth: 960, margin: "0 auto" }}>
-<header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-Guess The Liar
-Room: {String(roomCode) || "—"} | You: {String(name) || "anon"}
-
+<header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}> <h1>Guess The Liar</h1> <div>Room: {String(roomCode) || "—"} | You: {String(name) || "anon"}</div> </header>
 
 
   {phase === "lobby" && (
@@ -312,6 +318,7 @@ Room: {String(roomCode) || "—"} | You: {String(name) || "anon"}
     </div>
   )}
 </div>
+
 
 );
 }

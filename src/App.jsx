@@ -17,13 +17,14 @@ appId: "1:300436562056:web:8e5368b914a5cbfded7f3d"
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
 
-// 200 categories
+// 200 categories (sample shown, expand to 200)
 const promptCategories = Array.from({ length: 200 }).map((_, i) => ({
 name: `Category ${i + 1}`,
 real: `Real question ${i + 1}?`,
 impostors: [`Impostor A ${i + 1}`, `Impostor B ${i + 1}`, `Impostor C ${i + 1}`]
 }));
 
+// Utility for similarity (simple Jaccard word similarity)
 const similarityScore = (a, b) => {
 const setA = new Set(a.toLowerCase().split(/\s+/));
 const setB = new Set(b.toLowerCase().split(/\s+/));
@@ -45,6 +46,7 @@ const [realQuestion, setRealQuestion] = useState("");
 const [round, setRound] = useState(1);
 const [selectedVotes, setSelectedVotes] = useState([]);
 
+// Subscribe to room changes
 useEffect(() => {
 if (!roomCode) return;
 const roomRef = ref(database, `rooms/${roomCode}`);
@@ -62,6 +64,7 @@ setRound(data.round || 1);
 return () => unsub();
 }, [roomCode]);
 
+// Timer & automatic phase progression
 useEffect(() => {
 if (!timerEnd || phase === "lobby" || phase === "reveal") return;
 const tick = setInterval(async () => {
@@ -81,6 +84,7 @@ await update(roomRef, { phase: "reveal", timerEnd: null });
 return () => clearInterval(tick);
 }, [timerEnd, phase, roomCode]);
 
+// Lobby management
 const createRoom = async () => {
 if (!name) { alert("Enter your name"); return; }
 const code = Math.floor(Math.random() * 9000 + 1000).toString();
@@ -105,6 +109,7 @@ if (!snap.exists()) { alert("Room not found"); return; }
 await set(ref(database, `rooms/${roomCode}/players/${name}`), { answer: "", vote: [] });
 };
 
+// Start round
 const startRound = async () => {
 if (!roomCode) return;
 const roomRef = ref(database, `rooms/${roomCode}`);
@@ -112,7 +117,7 @@ const snap = await get(roomRef);
 if (!snap.exists()) return;
 const data = snap.val();
 const playerNames = Object.keys(data.players || {});
-if (!playerNames.length) return;
+if (playerNames.length === 0) return;
 const numImpostors = Math.floor(Math.random() * Math.max(1, playerNames.length));
 const shuffled = [...playerNames].sort(() => 0.5 - Math.random());
 const selectedImpostors = shuffled.slice(0, numImpostors);
@@ -135,17 +140,18 @@ round: data.round || 1
 });
 };
 
+// Voting
 const toggleVote = (playerName) => {
 setSelectedVotes(prev =>
 prev.includes(playerName) ? prev.filter(p => p !== playerName) : [...prev, playerName]
 );
 };
-
 const submitVote = async () => {
 if (!roomCode || !name) return;
 await set(ref(database, `rooms/${roomCode}/players/${name}/vote`), selectedVotes);
 };
 
+// Next round
 const nextRound = async () => {
 if (name !== creator) { alert("Only creator can next round"); return; }
 if (round >= 10) { alert("Game over!"); return; }
@@ -154,6 +160,7 @@ setSelectedVotes([]);
 startRound();
 };
 
+// Confetti trigger
 useEffect(() => {
 if (phase === "reveal") {
 Object.entries(players).forEach(([p, data]) => {
@@ -164,6 +171,7 @@ confetti({ particleCount: 50, spread: 70, origin: { y: 0.6 } });
 }
 }, [phase]);
 
+// Most similar pairs
 const mostSimilarPairs = () => {
 const names = Object.keys(players);
 const pairs = [];
@@ -177,6 +185,7 @@ pairs.push({ pair: [names[i], names[j]], score: similarityScore(a, b) });
 return pairs.sort((a, b) => b.score - a.score).slice(0, 3);
 };
 
+// Render
 return (
 <div style={{ fontFamily: "Arial,sans-serif", padding: 20, maxWidth: 960, margin: "0 auto" }}>
 <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}> <h1>Guess The Liar</h1> <div>Room: {roomCode || "—"} | You: {name || "anon"}</div> </header>
@@ -196,7 +205,7 @@ return (
       <div>
         <h3>Players</h3>
         {Object.keys(players).map(p => (
-          <div key={p}>{p} {p === creator ? "(host)" : ""}</div>
+          <div key={p}>{p} {p === creator ? "(host)" : " "}</div>
         ))}
       </div>
     </div>
@@ -221,11 +230,7 @@ return (
       <h2>Debate Phase</h2>
       <div>Real question: {realQuestion}</div>
       {Object.keys(players).map(p => (
-        <button
-          key={p}
-          onClick={() => toggleVote(p)}
-          style={{ margin: 4, border: selectedVotes.includes(p) ? "2px solid green" : "1px solid #ccc" }}
-        >
+        <button key={p} onClick={() => toggleVote(p)} style={{ margin: 4, border: selectedVotes.includes(p) ? "2px solid green" : "1px solid #ccc" }}>
           {p} {selectedVotes.includes(p) ? "✓" : ""}
         </button>
       ))}

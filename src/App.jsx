@@ -45,7 +45,7 @@ const [round, setRound] = useState(1);
 const [selectedVotes, setSelectedVotes] = useState([]);
 const [confetti, setConfetti] = useState(null);
 
-// Lazy load canvas-confetti on client
+// Lazy load canvas-confetti
 useEffect(() => {
 if (typeof window !== "undefined") {
 import("canvas-confetti").then((mod) => setConfetti(() => mod.default));
@@ -198,8 +198,8 @@ return (
   {phase === "lobby" && (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 20 }}>
       <div>
-        <input placeholder="Name" value={name} onChange={e => setName(e.target.value)} />
-        <input placeholder="Room" value={roomCode} onChange={e => setRoomCode(e.target.value)} />
+        <input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+        <input placeholder="Room" value={roomCode} onChange={(e) => setRoomCode(e.target.value)} />
         <div>
           <button onClick={createRoom}>Create</button>
           <button onClick={joinRoom}>Join</button>
@@ -222,7 +222,9 @@ return (
       <input
         type="text"
         value={players[name]?.answer || ""}
-        onChange={e => update(ref(database, `rooms/${roomCode}/players/${name}`), { answer: e.target.value })}
+        onChange={(e) => {
+          update(ref(database, `rooms/${roomCode}/players/${name}`), { answer: e.target.value });
+        }}
         placeholder="Type your answer"
       />
       <div>Time left: {timeLeft}s</div>

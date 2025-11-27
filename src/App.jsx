@@ -17,9 +17,21 @@ const database = getDatabase(app);
 
 // ---------------- PROMPT CATEGORIES ----------------
 const promptCategories = [
-{ name: "Movies", real: "What's your favorite movie?", impostors: ["Worst movie ever?", "Pick a bad movie.", "Movie with zero stars?"] },
-{ name: "Food", real: "What's your comfort food?", impostors: ["Grossest food?", "Food you'd never eat?", "Worst tasting dish?"] },
-{ name: "Music", real: "Favorite song/artist?", impostors: ["Worst song ever?", "Genre that ruins music?", "Track that makes people cringe?"] }
+{
+name: "Movies",
+real: "What's your favorite movie?",
+impostors: ["Worst movie ever?", "Pick a bad movie.", "Movie with zero stars?"]
+},
+{
+name: "Food",
+real: "What's your comfort food?",
+impostors: ["Grossest food?", "Food you'd never eat?", "Worst tasting dish?"]
+},
+{
+name: "Music",
+real: "Favorite song/artist?",
+impostors: ["Worst song ever?", "Genre that ruins music?", "Track that makes people cringe?"]
+}
 ];
 
 // ---------------- APP COMPONENT ----------------
@@ -77,7 +89,14 @@ if (!name) return alert("Enter your display name.");
 const code = Math.floor(Math.random() * 9000 + 1000).toString();
 setRoomCode(code);
 const playerObj = { [name]: { question: "", vote: "" } };
-await set(ref(database, `rooms/${code}`), { players: playerObj, impostors: [], phase: "lobby", timerEnd: null, creator: name, realQuestion: "" });
+await set(ref(database, `rooms/${code}`), {
+players: playerObj,
+impostors: [],
+phase: "lobby",
+timerEnd: null,
+creator: name,
+realQuestion: ""
+});
 };
 
 const joinRoom = async () => {
@@ -114,7 +133,13 @@ names.forEach(p => {
   }
 });
 
-await update(roomRef, { players: updatedPlayers, impostors: selectedImpostors, realQuestion: canonicalReal, phase: "answer", timerEnd: Date.now() + 60000 });
+await update(roomRef, {
+  players: updatedPlayers,
+  impostors: selectedImpostors,
+  realQuestion: canonicalReal,
+  phase: "answer",
+  timerEnd: Date.now() + 60000
+});
 ```
 
 };
@@ -135,57 +160,60 @@ await startRound();
 };
 
 // ---------------- UI HELPERS ----------------
-const initials = n => n ? n.split(" ").map(s => s[0].toUpperCase()).slice(0,2).join("") : "?";
+const initials = n => (n ? n.split(" ").map(s => s[0].toUpperCase()).slice(0, 2).join("") : "?");
+const playerVoted = p => !!players[p]?.vote;
 
 // ---------------- RENDER ----------------
 return (
-<div style={{ fontFamily:"Inter,Arial,sans-serif", padding:20, maxWidth:960, margin:"0 auto" }}> <h1>Guess The Liar</h1> <div>Room: {roomCode || "—"} | You: {name || "anonymous"}</div>
+<div style={{ fontFamily: "Inter,Arial,sans-serif", padding: 20, maxWidth: 960, margin: "0 auto" }}> <h1>Guess The Liar</h1> <div>Room: {roomCode || "—"} | You: {name || "anonymous"}</div>
 
 ```
-  {phase==="lobby" && (
-    <div style={{ marginTop:20 }}>
-      <input placeholder="Your name" value={name} onChange={e=>setName(e.target.value)} />
-      <input placeholder="Room code" value={roomCode} onChange={e=>setRoomCode(e.target.value)} />
+  {phase === "lobby" && (
+    <div style={{ marginTop: 20 }}>
+      <input placeholder="Your name" value={name} onChange={e => setName(e.target.value)} />
+      <input placeholder="Room code" value={roomCode} onChange={e => setRoomCode(e.target.value)} />
       <button onClick={createRoom}>Create Room</button>
       <button onClick={joinRoom}>Join Room</button>
-      {name && creator===name && <button onClick={startGame}>Start Game</button>}
+      {name && creator === name && <button onClick={startGame}>Start Game</button>}
     </div>
   )}
 
-  {phase==="answer" && (
-    <div style={{ marginTop:20 }}>
+  {phase === "answer" && (
+    <div style={{ marginTop: 20 }}>
       <h2>Answer Phase</h2>
       <div>Your question: {players[name]?.question || "Waiting..."}</div>
       <div>Time left: {timeLeft}s</div>
     </div>
   )}
 
-  {phase==="debate" && (
-    <div style={{ marginTop:20 }}>
+  {phase === "debate" && (
+    <div style={{ marginTop: 20 }}>
       <h2>Debate Phase</h2>
       <div>Real question: {realQuestion || "—"}</div>
       <div>Cast your vote:</div>
       {Object.keys(players).map(p => (
-        <button key={p} disabled={players[name]?.vote===p} onClick={()=>castVote(p)}>
-          {p} {players[name]?.vote===p?"✓":""}
+        <button key={p} disabled={players[name]?.vote === p} onClick={() => castVote(p)}>
+          {p} {players[name]?.vote === p ? "✓" : ""}
         </button>
       ))}
       <div>Your vote: {players[name]?.vote || "None"} | Time left: {timeLeft}s</div>
     </div>
   )}
 
-  {phase==="reveal" && (
-    <div style={{ marginTop:20 }}>
+  {phase === "reveal" && (
+    <div style={{ marginTop: 20 }}>
       <h2>Reveal</h2>
       <div>Real question: {realQuestion}</div>
       <div>Impostors: {impostors.join(", ") || "None"}</div>
       <h4>Votes:</h4>
       <ul>
-        {Object.entries(players).map(([p,d])=>(
-          <li key={p}>{p} voted for {d.vote||"Nobody"}</li>
+        {Object.entries(players).map(([p, d]) => (
+          <li key={p}>
+            {p} voted for {d.vote || "Nobody"}
+          </li>
         ))}
       </ul>
-      {name===creator && <button onClick={nextRound}>Next Round</button>}
+      {name === creator && <button onClick={nextRound}>Next Round</button>}
     </div>
   )}
 </div>

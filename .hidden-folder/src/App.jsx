@@ -6,7 +6,7 @@ import { getDatabase, ref, set, onValue, update, get } from "firebase/database";
 const firebaseConfig = {
 apiKey: "AIzaSyBfHKSTDRQVsoFXSbospWZHJRlRSijgiW0",
 authDomain: "guesstheliar-ca0b6.firebaseapp.com",
-databaseURL: "https://guesstheliar-ca0b6-default-rtdb.firebaseio.com",
+databaseURL: "[https://guesstheliar-ca0b6-default-rtdb.firebaseio.com](https://guesstheliar-ca0b6-default-rtdb.firebaseio.com)",
 projectId: "guesstheliar-ca0b6",
 storageBucket: "guesstheliar-ca0b6.firebasestorage.app",
 messagingSenderId: "300436562056",
@@ -20,9 +20,9 @@ const sanitize = str => str.replace(/[.#$[]\s()]/g, "_").trim();
 const isValidPath = str => /^[^.#$[]\s]+$/.test(str) && str.trim() !== "";
 
 const promptCategories = Array.from({ length: 200 }).map((_, i) => ({
-name: Category ${i + 1},
-real: Real question ${i + 1},
-impostors: [Impostor A ${i + 1}, Impostor B ${i + 1}, Impostor C ${i + 1}]
+name: `Category ${i + 1}`,
+real: `Real question ${i + 1}`,
+impostors: [`Impostor A ${i + 1}`, `Impostor B ${i + 1}`, `Impostor C ${i + 1}`]
 }));
 
 const similarityScore = (a, b) => {
@@ -55,7 +55,7 @@ import("canvas-confetti").then(mod => setConfetti(() => mod.default));
 
 useEffect(() => {
 if (!roomCode) return;
-const roomRef = ref(database, rooms/${sanitize(roomCode)});
+const roomRef = ref(database, `rooms/${sanitize(roomCode)}`);
 const unsub = onValue(roomRef, snapshot => {
 const data = snapshot.val();
 if (!data) return;
@@ -76,7 +76,7 @@ const tick = setInterval(async () => {
 const remain = Math.max(0, Math.ceil((timerEnd - Date.now()) / 1000));
 setTimeLeft(remain);
 if (remain <= 0) {
-const roomRef = ref(database, rooms/${sanitize(roomCode)});
+const roomRef = ref(database, `rooms/${sanitize(roomCode)}`);
 const snap = await get(roomRef);
 if (!snap.exists()) return;
 if (phase === "answer") {
@@ -89,14 +89,213 @@ await update(roomRef, { phase: "reveal", timerEnd: null });
 return () => clearInterval(tick);
 }, [timerEnd, phase, roomCode]);
 
-// ...all other functions like createRoom, joinRoom, startRound, toggleVote, submitVote, nextRound, mostSimilarPairs remain the same
+const createRoom = async () => {
+if (!name || !isValidPath(name)) {
+alert("Enter a valid name (no '.', '#', '$', '[', ']', or spaces)");
+return;
+}
+const code = Math.floor(Math.random() * 9000 + 1000).toString();
+const sanitizedCode = sanitize(code);
+const sanitizedName = sanitize(name);
+setRoomCode(sanitizedCode);
+const playerObj = {};
+playerObj[sanitizedName] = { answer: "", vote: [] };
+await set(ref(database, `rooms/${sanitizedCode}`), {
+players: playerObj,
+impostors: [],
+phase: "lobby",
+timerEnd: null,
+creator: sanitizedName,
+realQuestion: "",
+round: 1
+});
+};
+
+const joinRoom = async () => {
+if (!name || !roomCode) {
+alert("Enter your name and room code");
+return;
+}
+if (!isValidPath(name) || !isValidPath(roomCode)) {
+alert("Name or room code contains invalid characters");
+return;
+}
+const sanitizedName = sanitize(name);
+const sanitizedCode = sanitize(roomCode);
+const roomRef = ref(database, `rooms/${sanitizedCode}`);
+const snap = await get(roomRef);
+if (!snap.exists()) {
+alert("Room not found");
+return;
+}
+await set(ref(database, `rooms/${sanitizedCode}/players/${sanitizedName}`), { answer: "", vote: [] });
+};
+
+const startRound = async () => {
+if (!roomCode || !isValidPath(roomCode)) return;
+const sanitizedCode = sanitize(roomCode);
+const roomRef = ref(database, `rooms/${sanitizedCode}`);
+const snap = await get(roomRef);
+if (!snap.exists()) return;
+const data = snap.val();
+const playerNames = Object.keys(data.players || {});
+if (!playerNames.length) return;
+const numImpostors = Math.floor(Math.random() * Math.max(1, playerNames.length));
+const shuffled = [...playerNames].sort(() => 0.5 - Math.random());
+const selectedImpostors = shuffled.slice(0, numImpostors);
+const category = promptCategories[Math.floor(Math.random() * promptCategories.length)];
+const canonicalReal = category.real;
+const updatedPlayers = {};
+playerNames.forEach(p => {
+const sanitized = sanitize(p);
+if (selectedImpostors.includes(p)) {
+const variant = category.impostors[Math.floor(Math.random() * category.impostors.length)];
+updatedPlayers[sanitized] = { answer: "", variant, vote: [] };
+} else {
+updatedPlayers[sanitized] = { answer: "", variant: canonicalReal, vote: [] };
+}
+});
+await update(roomRef, {
+players: updatedPlayers,
+impostors: selectedImpostors.map(sanitize),
+realQuestion: canonicalReal,
+phase: "answer",
+timerEnd: Date.now() + 60 * 1000,
+round: data.round || 1
+});
+};
+
+const toggleVote = (playerName) => {
+setSelectedVotes(prev =>
+prev.includes(playerName) ? prev.filter(p => p !== playerName) : [...prev, playerName]
+);
+};
+
+const submitVote = async () => {
+if (!roomCode || !name) return;
+const sanitizedName = sanitize(name);
+const sanitizedCode = sanitize(roomCode);
+await set(ref(database, `rooms/${sanitizedCode}/players/${sanitizedName}/vote`), selectedVotes);
+};
+
+const nextRound = async () => {
+if (name !== creator) { alert("Only creator can next round"); return; }
+if (round >= 10) { alert("Game over!"); return; }
+await update(ref(database, `rooms/${sanitize(roomCode)}`), { round: round + 1 });
+setSelectedVotes([]);
+startRound();
+};
+
+useEffect(() => {
+if (phase === "reveal" && confetti) {
+Object.entries(players).forEach(([p, data]) => {
+if ((data.vote || []).some(v => impostors.includes(v))) {
+confetti({ particleCount: 50, spread: 70, origin: { y: 0.6 } });
+}
+});
+}
+}, [phase, players, impostors, confetti]);
+
+const mostSimilarPairs = () => {
+const names = Object.keys(players);
+const pairs = [];
+for (let i = 0; i < names.length; i++) {
+for (let j = i + 1; j < names.length; j++) {
+const a = players[names[i]]?.answer || "";
+const b = players[names[j]]?.answer || "";
+pairs.push({ pair: [names[i], names[j]], score: similarityScore(a, b) });
+}
+}
+return pairs.sort((a, b) => b.score - a.score).slice(0, 3);
+};
 
 return (
 <div style={{ fontFamily: "Arial,sans-serif", padding: 20, maxWidth: 960, margin: "0 auto" }}>
 <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-Guess The Liar | Room: {roomCode || "—"} | You: {name || "anon"}
+Guess The Liar
+Room: {String(roomCode) || "—"} | You: {String(name) || "anon"} </header>
 
-{/* Render lobby, answer, debate, reveal phases here exactly like before */}
+```
+  {phase === "lobby" && (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 20 }}>
+      <div>
+        <input placeholder="Name" value={name} onChange={e => setName(e.target.value)} />
+        <input placeholder="Room" value={roomCode} onChange={e => setRoomCode(e.target.value)} />
+        <div>
+          <button onClick={createRoom}>Create</button>
+          <button onClick={joinRoom}>Join</button>
+          {creator === name && <button onClick={startRound}>Start Game</button>}
+        </div>
+      </div>
+      <div>
+        <h3>Players</h3>
+        {Object.keys(players).map(p => (
+          <div key={p}>{p} {p === creator ? "(host)" : ""}</div>
+        ))}
+      </div>
+    </div>
+  )}
+
+  {phase === "answer" && (
+    <div>
+      <h2>Round {round} - Answer Phase</h2>
+      <div>Your question: {String(players[sanitize(name)]?.variant)}</div>
+      <input
+        type="text"
+        value={String(players[sanitize(name)]?.answer || "")}
+        placeholder="Type your answer"
+        onChange={e => {
+          const ans = e.target.value;
+          update(ref(database, `rooms/${sanitize(roomCode)}/players/${sanitize(name)}`), { answer: ans });
+        }}
+      />
+      <div>Time left: {timeLeft}s</div>
+    </div>
+  )}
+
+  {phase === "debate" && (
+    <div>
+      <h2>Debate Phase</h2>
+      <div>Real question: {String(realQuestion)}</div>
+      <div>
+        {Object.keys(players).map(p => (
+          <button
+            key={p}
+            onClick={() => toggleVote(p)}
+            style={{ margin: 4, border: selectedVotes.includes(p) ? "2px solid green" : "1px solid #ccc" }}
+          >
+            {p} {selectedVotes.includes(p) ? "✓" : ""}
+          </button>
+        ))}
+      </div>
+      <div>
+        <button onClick={submitVote}>Submit Vote</button>
+        <span>Time left: {timeLeft}s</span>
+      </div>
+    </div>
+  )}
+
+  {phase === "reveal" && (
+    <div>
+      <h2>Reveal Phase</h2>
+      <div>Impostors: {impostors.join(", ") || "None"}</div>
+      <h3>Votes</h3>
+      <ul>
+        {Object.entries(players).map(([p, data]) => (
+          <li key={p}>{p} voted for {(data.vote || []).join(", ") || "Nobody"}</li>
+        ))}
+      </ul>
+      <h3>Most similar answers:</h3>
+      <ul>
+        {mostSimilarPairs().map((s, i) => (
+          <li key={i}>{s.pair.join(" & ")} — {Math.round(s.score * 100)}%</li>
+        ))}
+      </ul>
+      {creator === name && <button onClick={nextRound}>Next Round</button>}
+    </div>
+  )}
+</div>
+```
 
 );
 }

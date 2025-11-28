@@ -767,8 +767,18 @@ export default function App(){
     const rotated = [...shuffled.slice(rot), ...shuffled.slice(0,rot)];
     const updated = {};
     pnames.forEach(p => updated[p] = { ...data.players[p], clue:"", clueSubmitted:false, vote:[], voteSubmitted:false });
-    await update(rRef, { players: updated, phase: "oneword_round", currentItem: item, playerOrder: rotated, currentTurnIndex: 0, timerEnd: Date.now()+4*60*1000, oneWordClues: {}, round: data.round||1 });
-  };
+    await update(rRef, {
+  players: updated,
+  mode: "oneword",
+  phase: "oneword_round",
+  currentItem: item,
+  playerOrder: rotated,
+  currentTurnIndex: 0,
+  timerEnd: Date.now() + 4 * 60 * 1000,
+  oneWordClues: {},
+  round: data.round || 1
+});
+
 
   // submit answer (liar)
   const submitAnswer = async (ans) => {

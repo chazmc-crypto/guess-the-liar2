@@ -778,7 +778,7 @@ export default function App(){
   oneWordClues: {},
   round: data.round || 1
 });
-
+};
 
   // submit answer (liar)
   const submitAnswer = async (ans) => {
